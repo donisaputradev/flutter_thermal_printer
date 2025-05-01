@@ -97,11 +97,13 @@ class OtherPrinterManager {
     List<int> bytes, {
     bool longData = false,
   }) async {
+    final data = Uint8List.fromList(bytes);
+
     if (printer.connectionType == ConnectionType.USB) {
       try {
         await FlutterThermalPrinterPlatform.instance.printText(
           printer,
-          Uint8List.fromList(bytes),
+          data,
           path: printer.address,
         );
       } catch (e) {
@@ -115,8 +117,7 @@ class OtherPrinterManager {
           return;
         }
 
-        final services =
-            (await device.discoverServices()).skipWhile((value) => value.characteristics.where((element) => element.properties.write).isEmpty);
+        final services = await device.discoverServices();
 
         BluetoothCharacteristic? writeCharacteristic;
         for (var service in services) {
@@ -126,6 +127,7 @@ class OtherPrinterManager {
               break;
             }
           }
+          if (writeCharacteristic != null) break;
         }
 
         if (writeCharacteristic == null) {
@@ -133,22 +135,23 @@ class OtherPrinterManager {
           return;
         }
 
-        const maxChunkSize = 512;
-        for (var i = 0; i < bytes.length; i += maxChunkSize) {
-          final chunk = bytes.sublist(
-            i,
-            i + maxChunkSize > bytes.length ? bytes.length : i + maxChunkSize,
-          );
+        const int chunkSize = 200; // aman untuk BLE
+        for (int offset = 0; offset < data.length; offset += chunkSize) {
+          final end = (offset + chunkSize < data.length)
+              ? offset + chunkSize
+              : data.length;
+          final chunk = data.sublist(offset, end);
 
           await writeCharacteristic.write(
-            Uint8List.fromList(chunk),
+            chunk,
             withoutResponse: true,
           );
+
+          await Future.delayed(const Duration(milliseconds: 50));
         }
 
-        return;
       } catch (e) {
-        log('Failed to print data to device $e');
+        log('Failed to print data to device: $e');
       }
     }
   }
